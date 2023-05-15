@@ -1,0 +1,66 @@
+# profile_dataset.py
+import pandas as pd
+import sqlite3
+import argparse
+
+import output
+
+IN_DB_FILE = "dis.db"
+
+search_tags = [
+    'cust:hsi',
+    'cust:si',
+    'cust:qsi',
+    'cust:lsi',
+    'cust:hsi-medical',
+    'cust:hsi-financial',
+]
+
+parser = argparse.ArgumentParser(
+    prog="profile_dataset.py", description="Analyse privacy concerns of a dataset"
+)
+
+parser.add_argument(
+    "datasets",
+    nargs="*",
+    help="list of 'database:tablename' combination to be analyzed",
+    default=[],
+)
+
+args = parser.parse_args()
+
+# Use default datasets if none provided from the command line arguments
+if not args.datasets:
+    args.datasets = [
+        'customers.db:customer',
+        'cust_medical.db:cust_medical',
+        'cust_address.db:cust_address',
+        'cust_demographic.db:cust_demo',
+    ]
+
+for dataset in args.datasets:
+
+    [db_url, table_name] = dataset.split(":")
+
+    # Read sqlite query results into a pandas DataFrame
+    con = sqlite3.connect(IN_DB_FILE)
+    sql = "SELECT * from metadata where \"url\" = '" + \
+        db_url + "' AND \"table\" = '" + table_name + "'"
+    metadata_df = pd.read_sql_query(sql, con)
+    con.close()
+
+    total_records = metadata_df['id'].nunique()
+    id_tag_df = metadata_df[['id', 'tag']]
+    tag_inventory = {}
+    for tag in search_tags:
+        matching_records = id_tag_df[id_tag_df['tag'].str.match(tag)]
+        tag_inventory[tag] = matching_records['id'].nunique()
+
+    analysis_df = pd.DataFrame(tag_inventory.items(), columns=[
+        'tag', 'percentage'])
+
+    analysis_df['percentage'] = round(
+        analysis_df['percentage'] / total_records * 100, 2)
+
+    print()
+    output.printTable(analysis_df, title="Profile: " + db_url)
